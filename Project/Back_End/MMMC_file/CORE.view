@@ -1,0 +1,108 @@
+####################################################################################################
+# Version: 1.0  |  MMMC (Multi-Mode Multi-Corner) View Definition File
+# NOTE: Do Not Remove the Above Line
+####################################################################################################
+
+
+####################################################################################################
+## Step 1: Library Sets
+####################################################################################################
+# Define library sets for different PVT corners (Process, Voltage, Temperature):
+# - TC_LIBSET : Typical Corner library (nominal process, nominal voltage, room temperature)
+# - WC_LIBSET : Worst Corner library (slow process, low voltage, high temperature → worst delays)
+# - BC_LIBSET : Best Corner library (fast process, high voltage, low temperature → shortest delays)
+#
+# These timing libraries are provided by the foundry and must match the design’s PVT conditions.
+# Make sure that your lib path is different in other PC's
+create_library_set -name TC_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/mmmc_files/libs/tcbn65lptc.lib
+create_library_set -name WC_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/mmmc_files/libs/tcbn65lpwc.lib
+create_library_set -name BC_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/mmmc_files/libs/tcbn65lpbc.lib
+
+# New library sets for I/O cells
+create_library_set -name TC_IO_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/Libs/tpzn65lpgv2od3tc.lib
+create_library_set -name WC_IO_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/Libs/tpzn65lpgv2od3wc.lib
+create_library_set -name BC_IO_LIBSET -timing /home/cc/Physical_Design/Project/Back_end/Libs/tpzn65lpgv2od3bc.lib
+
+####################################################################################################
+## Step 2: Timing Conditions
+####################################################################################################
+# Timing conditions bind a library set to a named operating point.
+# Each condition corresponds to a PVT case used in timing analysis.
+
+create_timing_condition -name TC -library_sets {TC_LIBSET}
+create_timing_condition -name WC -library_sets {WC_LIBSET}
+create_timing_condition -name BC -library_sets {BC_LIBSET}
+
+create_timing_condition -name TC -library_sets {TC_LIBSET TC_IO_LIBSET}
+create_timing_condition -name WC -library_sets {WC_LIBSET WC_IO_LIBSET}
+create_timing_condition -name BC -library_sets {BC_LIBSET BC_IO_LIBSET}
+
+####################################################################################################
+## Step 3: RC Corners
+####################################################################################################
+# RC corners capture interconnect variation effects (resistance & capacitance).
+# These are extracted from the process technology files:
+# - RC_TC : Typical interconnect parasitics
+# - RC_WC : Worst-case parasitics (higher RC → slower signals)
+# - RC_BC : Best-case parasitics (lower RC → faster signals)
+
+create_rc_corner -name RC_TC -cap_table /home/cc/Physical_Design/Project/Back_end/mmmc_files/captable/cln65lp_1p09m+alrdl_top2_typical.captable
+create_rc_corner -name RC_WC -cap_table /home/cc/Physical_Design/Project/Back_end/mmmc_files/captable/cln65lp_1p09m+alrdl_top2_rcworst.captable
+create_rc_corner -name RC_BC -cap_table /home/cc/Physical_Design/Project/Back_end/mmmc_files/captable/cln65lp_1p09m+alrdl_top2_rcbest.captable
+
+
+####################################################################################################
+## Step 4: Constraint Mode
+####################################################################################################
+# Constraint modes define the logical design constraints via SDC files.
+# These include:
+#   - Clock definitions
+#   - Input/Output delays
+#   - Multicycle and false path definitions
+#   - Case analysis and design-specific constraints
+#
+# Multiple constraint modes can be defined (e.g., functional vs. test).
+# Here, we define a single constraint mode for the counter design.
+# Make sure about the path of sdc
+create_constraint_mode -name constraints -sdc_files {/home/cc/Physical_Design/Project/Back_end/constraints/CORE.sdc}
+
+
+####################################################################################################
+## Step 5: Delay Corners
+####################################################################################################
+# Delay corners are created by combining timing conditions (PVT libs) with RC corners.
+# These represent complete operating scenarios for timing analysis.
+# - DC_TC : Typical case
+# - DC_WC : Worst-case (slow silicon + worst RC)
+# - DC_BC : Best-case (fast silicon + best RC)
+
+create_delay_corner -name DC_TC -timing_condition {TC} -rc_corner {RC_TC}
+create_delay_corner -name DC_WC -timing_condition {WC} -rc_corner {RC_WC}
+create_delay_corner -name DC_BC -timing_condition {BC} -rc_corner {RC_BC}
+
+
+####################################################################################################
+## Step 6: Analysis Views
+####################################################################################################
+# Analysis views combine a constraint mode with a delay corner.
+# These views are used for timing checks:
+# - "slow" = Worst-case view, used for Setup (max delay paths → ensure timing closure)
+# - "fast" = Best-case view, used for Hold  (min delay paths → avoid hold violations)
+
+create_analysis_view -name slow -constraint_mode {constraints} -delay_corner {DC_WC}
+create_analysis_view -name fast -constraint_mode {constraints} -delay_corner {DC_BC}
+
+
+####################################################################################################
+## Step 7: Set Active Views
+####################################################################################################
+# Final step: specify which views will be used for Setup and Hold analysis.
+# Setup → checked with the slowest corner (DC_WC).
+# Hold  → checked with the fastest corner (DC_BC).
+
+set_analysis_view -setup {slow} -hold {fast}
+
+
+####################################################################################################
+# End of MMMC File
+####################################################################################################
